@@ -1,0 +1,65 @@
+name: Créer la clé de signature
+
+on:
+  workflow_dispatch:
+    inputs:
+      cn:
+        description: "Nom (CN)"
+        required: true
+        default: "Carnet de rechargement"
+      o:
+        description: "Organisation (O)"
+        required: true
+        default: "Usage personnel"
+      l:
+        description: "Ville (L)"
+        required: true
+        default: "Paris"
+      c:
+        description: "Pays (C, 2 lettres)"
+        required: true
+        default: "FR"
+
+jobs:
+  creer-cle:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Installer Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'temurin'
+          java-version: '17'
+
+      - name: Générer la clé de signature
+        run: |
+          keytool -genkeypair -v \
+            -keystore carnet-rechargement.keystore \
+            -alias "${{ secrets.ANDROID_KEY_ALIAS }}" \
+            -keyalg RSA -keysize 2048 -validity 10000 \
+            -storepass "${{ secrets.ANDROID_KEYSTORE_PASSWORD }}" \
+            -keypass "${{ secrets.ANDROID_KEY_PASSWORD }}" \
+            -dname "CN=${{ inputs.cn }}, O=${{ inputs.o }}, L=${{ inputs.l }}, C=${{ inputs.c }}"
+
+      - name: Encoder en base64
+        run: base64 -w0 carnet-rechargement.keystore > carnet-rechargement.keystore.base64.txt
+
+      - name: Calculer l'empreinte SHA-256
+        run: |
+          keytool -list -v -keystore carnet-rechargement.keystore \
+            -storepass "${{ secrets.ANDROID_KEYSTORE_PASSWORD }}" \
+            | grep "SHA256:" > empreinte-sha256.txt
+
+      - name: Publier le résultat
+        uses: actions/upload-artifact@v4
+        with:
+          name: cle-de-signature
+          path: |
+            carnet-rechargement.keystore
+            carnet-rechargement.keystore.base64.txt
+            empreinte-sha256.txt
+          retention-days: 1
+
+      - name: Rappel
+        run: |
+          echo "::warning::Gardez carnet-rechargement.keystore et le mot de passe en lieu sûr — sans eux, impossible de mettre à jour l'application plus tard."
+          echo "::warning::Cet artifact sera supprimé automatiquement par GitHub au bout de 24 heures : téléchargez-le maintenant."
