@@ -1,0 +1,85 @@
+name: APK Android
+
+on:
+  workflow_dispatch: {}
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Récupérer le dépôt
+        uses: actions/checkout@v4
+
+      - name: Installer Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Installer Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'temurin'
+          java-version: '17'
+
+      - name: Installer les dépendances
+        run: npm install
+
+      - name: Ajouter la plateforme Android
+        run: npx cap add android
+
+      - name: Synchroniser le contenu web
+        run: npx cap sync android
+
+      - name: Numéroter la version
+        run: |
+          python3 - << 'PYEOF'
+          import json, re
+          with open('package.json') as f:
+              version = json.load(f)['version']
+          run_number = "${{ github.run_number }}"
+          path = 'android/app/build.gradle'
+          with open(path) as f:
+              content = f.read()
+          content = re.sub(r'versionCode\s+\d+', f'versionCode {run_number}', content, count=1)
+          content = re.sub(r'versionName\s+"[^"]*"', f'versionName "{version}"', content, count=1)
+          with open(path, 'w') as f:
+              f.write(content)
+          print(f"versionCode={run_number} versionName={version}")
+          PYEOF
+
+      - name: Construire l'APK (non signé)
+        working-directory: android
+        run: |
+          chmod +x gradlew
+          ./gradlew assembleRelease
+
+      - name: Préparer la clé de signature
+        run: echo "${{ secrets.ANDROID_KEYSTORE_BASE64 }}" | base64 -d > signing.keystore
+
+      - name: Aligner et signer l'APK
+        run: |
+          set -e
+          UNSIGNED=$(find android/app/build/outputs/apk/release -name "*unsigned*.apk" | head -n1)
+          echo "APK non signé : $UNSIGNED"
+          BUILD_TOOLS_DIR="${ANDROID_SDK_ROOT:-$ANDROID_HOME}/build-tools"
+          BUILD_TOOLS=$(ls "$BUILD_TOOLS_DIR" | sort -V | tail -n1)
+          ZIPALIGN="$BUILD_TOOLS_DIR/$BUILD_TOOLS/zipalign"
+          APKSIGNER="$BUILD_TOOLS_DIR/$BUILD_TOOLS/apksigner"
+          echo "Outils de build : $BUILD_TOOLS"
+          "$ZIPALIGN" -v -p 4 "$UNSIGNED" aligned.apk
+          "$APKSIGNER" sign \
+            --ks signing.keystore \
+            --ks-key-alias "${{ secrets.ANDROID_KEY_ALIAS }}" \
+            --ks-pass "pass:${{ secrets.ANDROID_KEYSTORE_PASSWORD }}" \
+            --key-pass "pass:${{ secrets.ANDROID_KEY_PASSWORD }}" \
+            --out carnet-de-rechargement.apk \
+            aligned.apk
+          "$APKSIGNER" verify carnet-de-rechargement.apk
+          rm -f signing.keystore
+
+      - name: Publier l'APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: carnet-de-rechargement-apk
+          path: carnet-de-rechargement.apk
+          retention-days: 5
