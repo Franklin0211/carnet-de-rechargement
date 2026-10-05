@@ -1,0 +1,8 @@
+{
+  "appId": "com.franklin.carnetrechargement",
+  "appName": "Carnet de rechargement",
+  "webDir": "www",
+  "server": {
+    "androidScheme": "https"
+  }
+}
