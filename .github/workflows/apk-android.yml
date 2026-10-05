@@ -16,7 +16,7 @@ jobs:
           node-version: '20'
 
       - name: Installer Java
-        uses: actions/setup-java@v4
+        uses: actions/setup-java@v5
         with:
           distribution: 'temurin'
           java-version: '17'
@@ -29,6 +29,26 @@ jobs:
 
       - name: Synchroniser le contenu web
         run: npx cap sync android
+
+      - name: Installer l'icône et l'écran de lancement
+        run: |
+          pip install --quiet pillow
+          python3 - << 'PYEOF'
+          from PIL import Image
+          import os
+          res = 'android/app/src/main/res'
+          dens = {'mdpi': (48, 108), 'hdpi': (72, 162), 'xhdpi': (96, 216), 'xxhdpi': (144, 324), 'xxxhdpi': (192, 432)}
+          for d, (leg, fg) in dens.items():
+              folder = f'{res}/mipmap-{d}'
+              os.makedirs(folder, exist_ok=True)
+              Image.open('resources/icon-legacy.png').convert('RGBA').resize((leg, leg), Image.LANCZOS).save(f'{folder}/ic_launcher.png')
+              Image.open('resources/icon-round.png').convert('RGBA').resize((leg, leg), Image.LANCZOS).save(f'{folder}/ic_launcher_round.png')
+              Image.open('resources/icon-foreground.png').convert('RGBA').resize((fg, fg), Image.LANCZOS).save(f'{folder}/ic_launcher_foreground.png')
+          with open(f'{res}/values/ic_launcher_background.xml', 'w') as f:
+              f.write('<?xml version="1.0" encoding="utf-8"?>\n<resources>\n    <color name="ic_launcher_background">#0F171B</color>\n</resources>\n')
+          print('icônes installées')
+          PYEOF
+          sed -i 's#@drawable/splash#@color/ic_launcher_background#' android/app/src/main/res/values/styles.xml || true
 
       - name: Numéroter la version
         run: |
